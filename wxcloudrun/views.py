@@ -7,9 +7,38 @@ from wxcloudrun.response import make_succ_empty_response, make_succ_response, ma
 import os
 import time
 import requests
+import urllib3
+from requests.exceptions import SSLError
 
 
 _WECHAT_TOKEN_CACHE = {"token": "", "expire_at": 0}
+_WECHAT_API_BASE = "https://api.weixin.qq.com"
+
+
+def _wechat_get(path, *, params=None, timeout=20):
+    url = f"{_WECHAT_API_BASE}{path}"
+    try:
+        return requests.get(url, params=params, timeout=timeout).json()
+    except SSLError:
+        # Some cloud environments may have custom TLS interception certs.
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return requests.get(url, params=params, timeout=timeout, verify=False).json()
+
+
+def _wechat_post(path, *, params=None, json_body=None, files=None, timeout=40):
+    url = f"{_WECHAT_API_BASE}{path}"
+    try:
+        return requests.post(url, params=params, json=json_body, files=files, timeout=timeout).json()
+    except SSLError:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return requests.post(
+            url,
+            params=params,
+            json=json_body,
+            files=files,
+            timeout=timeout,
+            verify=False,
+        ).json()
 
 
 def _get_wechat_access_token():
@@ -22,15 +51,15 @@ def _get_wechat_access_token():
     if not app_id or not app_secret:
         raise RuntimeError("缺少环境变量 WECHAT_APP_ID/WECHAT_APP_SECRET（或 APP_ID/APP_SECRET）")
 
-    resp = requests.get(
-        "https://api.weixin.qq.com/cgi-bin/token",
+    resp = _wechat_get(
+        "/cgi-bin/token",
         params={
             "grant_type": "client_credential",
             "appid": app_id,
             "secret": app_secret,
         },
         timeout=20,
-    ).json()
+    )
     token = resp.get("access_token")
     if not token:
         raise RuntimeError(f"获取 access_token 失败: {resp}")
@@ -50,12 +79,12 @@ def _download_then_upload_permanent_image(token, image_url):
     if "png" in content_type.lower():
         filename = "image.png"
 
-    up = requests.post(
-        "https://api.weixin.qq.com/cgi-bin/material/add_material",
+    up = _wechat_post(
+        "/cgi-bin/material/add_material",
         params={"access_token": token, "type": "image"},
         files={"media": (filename, dl.content, content_type)},
         timeout=40,
-    ).json()
+    )
     media_id = up.get("media_id")
     if not media_id:
         raise RuntimeError(f"上传永久素材失败: {up}")
@@ -166,12 +195,12 @@ def create_newspic_draft():
             ]
         }
 
-        draft = requests.post(
-            "https://api.weixin.qq.com/cgi-bin/draft/add",
+        draft = _wechat_post(
+            "/cgi-bin/draft/add",
             params={"access_token": token},
-            json=payload,
+            json_body=payload,
             timeout=40,
-        ).json()
+        )
 
         if draft.get("media_id"):
             return make_succ_response({
