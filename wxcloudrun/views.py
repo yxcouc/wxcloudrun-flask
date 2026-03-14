@@ -252,3 +252,50 @@ def create_newspic_draft():
         return make_err_response(f"draft/add 失败: {draft}")
     except Exception as e:
         return make_err_response(str(e))
+
+
+@app.route('/api/wechat/newspic/get', methods=['POST'])
+def get_newspic_draft():
+    """
+    查询公众号“图片消息(newspic)”草稿详情（用于编码与展示诊断）。
+    请求示例：
+    {
+      "draft_media_id": "xxxxx"
+    }
+    """
+    try:
+        params = request.get_json() or {}
+        draft_media_id = (params.get("draft_media_id") or "").strip()
+        if not draft_media_id:
+            return make_err_response("缺少 draft_media_id 参数")
+
+        token = _get_wechat_access_token()
+        draft = _wechat_post(
+            "/cgi-bin/draft/get",
+            params={"access_token": token},
+            json_body={"media_id": draft_media_id},
+            timeout=30,
+        )
+
+        if draft.get("errcode"):
+            return make_err_response(f"draft/get 失败: {draft}")
+
+        item = {}
+        if isinstance(draft.get("news_item"), list) and draft["news_item"]:
+            item = draft["news_item"][0] or {}
+
+        title_raw = str(item.get("title", ""))
+        content_raw = str(item.get("content", ""))
+
+        # Return both raw and decoded values to precisely locate where escaping happens.
+        return make_succ_response({
+            "draft_media_id": draft_media_id,
+            "article_count": len(draft.get("news_item") or []),
+            "title_raw": title_raw,
+            "title_decoded": _decode_escaped_text(title_raw),
+            "content_raw_preview": content_raw[:120],
+            "content_decoded_preview": _decode_escaped_text(content_raw)[:120],
+            "raw": draft,
+        })
+    except Exception as e:
+        return make_err_response(str(e))
