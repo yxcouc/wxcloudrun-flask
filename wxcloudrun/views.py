@@ -9,6 +9,7 @@ import time
 import requests
 import urllib3
 from requests.exceptions import SSLError
+import codecs
 
 
 _WECHAT_TOKEN_CACHE = {"token": "", "expire_at": 0}
@@ -91,6 +92,23 @@ def _download_then_upload_permanent_image(token, image_url):
     return media_id
 
 
+def _decode_escaped_text(value):
+    """
+    Some callers may pass escaped unicode text like "\\u4f60\\u597d".
+    Decode only when escaped markers are detected to avoid damaging normal text.
+    """
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if "\\u" not in text and "\\x" not in text:
+        return text
+    try:
+        decoded = codecs.decode(text, "unicode_escape")
+        return decoded.strip()
+    except Exception:
+        return text
+
+
 @app.route('/')
 def index():
     """
@@ -164,8 +182,8 @@ def create_newspic_draft():
     """
     try:
         params = request.get_json() or {}
-        title = (params.get("title") or "").strip()
-        content = (params.get("content") or "").strip()
+        title = _decode_escaped_text(params.get("title"))
+        content = _decode_escaped_text(params.get("content"))
         image_urls = params.get("image_urls") or []
 
         if not title:
