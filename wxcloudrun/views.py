@@ -95,18 +95,25 @@ def _download_then_upload_permanent_image(token, image_url):
 def _decode_escaped_text(value):
     """
     Some callers may pass escaped unicode text like "\\u4f60\\u597d".
-    Decode only when escaped markers are detected to avoid damaging normal text.
+    Decode iteratively because some callers may double-escape text.
     """
-    text = (value or "").strip()
+    text = str(value or "").strip()
     if not text:
         return ""
-    if "\\u" not in text and "\\x" not in text:
-        return text
-    try:
-        decoded = codecs.decode(text, "unicode_escape")
-        return decoded.strip()
-    except Exception:
-        return text
+
+    # Run a few passes to handle "\\\\u4f60\\\\u597d" -> "\\u4f60\\u597d" -> "你好".
+    for _ in range(3):
+        if "\\u" not in text and "\\x" not in text and "\\n" not in text and "\\t" not in text:
+            break
+        try:
+            decoded = codecs.decode(text, "unicode_escape")
+        except Exception:
+            break
+        if decoded == text:
+            break
+        text = decoded
+
+    return text.strip()
 
 
 @app.route('/')
