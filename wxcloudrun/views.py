@@ -10,6 +10,7 @@ import requests
 import urllib3
 from requests.exceptions import SSLError
 import codecs
+import json
 
 
 _WECHAT_TOKEN_CACHE = {"token": "", "expire_at": 0}
@@ -28,15 +29,30 @@ def _wechat_get(path, *, params=None, timeout=20):
 
 def _wechat_post(path, *, params=None, json_body=None, files=None, timeout=40):
     url = f"{_WECHAT_API_BASE}{path}"
+    headers = None
+    data = None
+    if json_body is not None:
+        # WeChat newspic titles/content may be stored literally when payload uses
+        # ASCII-escaped unicode. Force UTF-8 JSON bytes to preserve Chinese text.
+        data = json.dumps(json_body, ensure_ascii=False).encode("utf-8")
+        headers = {"Content-Type": "application/json; charset=utf-8"}
     try:
-        return requests.post(url, params=params, json=json_body, files=files, timeout=timeout).json()
+        return requests.post(
+            url,
+            params=params,
+            data=data,
+            files=files,
+            headers=headers,
+            timeout=timeout,
+        ).json()
     except SSLError:
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         return requests.post(
             url,
             params=params,
-            json=json_body,
+            data=data,
             files=files,
+            headers=headers,
             timeout=timeout,
             verify=False,
         ).json()
